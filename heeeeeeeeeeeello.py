@@ -52,9 +52,40 @@ if st.button("✨ 결과 보러가기! ✨"):
     }
 
     space, sound, reason = recommendations.get(mbti_selection, ("❓ 공간 없음", "❓ 소리 없음", "❓ 설명 없음"))
-    st.markdown(f"### 🪄 어울리는 공부 공간: **{space}**")
-    st.markdown(f"### 🔊 추천 백색소음: **{sound}**")
-    st.markdown(f"### 🤔 왜 어울릴까요?\n{reason}")
+    st.markdown(
+    f"""
+    <style>
+    .result-box {{
+        border: 3px dashed #f39c12;
+        border-radius: 15px;
+        background-color: #fff8e1;
+        padding: 25px;
+        box-shadow: 0px 4px 12px rgba(0,0,0,0.1);
+        margin-top: 20px;
+        font-size: 18px;
+        line-height: 1.7;
+    }}
+    .animated {{
+        animation: pulse 1.8s infinite;
+        color: #d35400;
+        font-weight: bold;
+    }}
+    @keyframes pulse {{
+        0% {{ transform: scale(1); }}
+        50% {{ transform: scale(1.05); }}
+        100% {{ transform: scale(1); }}
+    }}
+    </style>
+
+    <div class="result-box">
+        <p>🪄 <span class="animated">어울리는 공부 공간</span>: <strong>{space}</strong></p>
+        <p>🔊 <span class="animated">추천 백색소음</span>: <strong>{sound}</strong></p>
+        <p>🤔 <span class="animated">이유</span>:<br> {reason}</p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
     st.success("✨ 나만의 공부 공간이 완성됐어요! 집중력 UP! 📈")
     st.balloons()
 
