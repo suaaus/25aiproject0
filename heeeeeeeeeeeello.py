@@ -2,7 +2,6 @@ import streamlit as st
 
 st.set_page_config(page_title="MBTI 공부 공간 추천 🎧✨", page_icon="📚")
 st.title("🌟 나의 MBTI에 딱 맞는 공부 공간은? ✨")
-st.balloons()
 
 st.markdown("## 🧠 MBTI를 선택해 주세요 👇")
 
