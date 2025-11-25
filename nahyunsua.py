@@ -2,9 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from pathlib import Path
-
-from sklearn.preprocessing import LabelEncoder
-from xgboost import XGBRegressor
+from sklearn.linear_model import LinearRegression
 
 
 # ------------------------------------------------------------
@@ -22,7 +20,7 @@ def load_data():
     df["year"] = pd.to_numeric(df["year"], errors="coerce").astype("Int64")
     df["emissions_per_area"] = pd.to_numeric(df["emissions_per_area"], errors="coerce")
 
-    # 핵심 타깃이 없는 행은 제거
+    # year이나 타깃이 없는 행 제거
     df = df.dropna(subset=["year", "emissions_per_area"])
     df["year"] = df["year"].astype(int)
 
@@ -30,10 +28,10 @@ def load_data():
 
 
 # ------------------------------------------------------------
-# 2. XGBoost 학습 + 2050년까지 예측
+# 2. 각 지역별 선형회귀로 2050년까지 예측
 # ------------------------------------------------------------
 @st.cache_data
-def train_and_forecast(df: pd.DataFrame, year_until: int = 2050):
+def fit_linear_trend_and_forecast(df: pd.DataFrame, year_until: int = 2050):
     """
     df: green_en.csv
         columns = ['region', 'year', 'emissions', 'area', 'emissions_per_area']
@@ -41,89 +39,80 @@ def train_and_forecast(df: pd.DataFrame, year_until: int = 2050):
 
     df = df.copy()
 
-    # 1) region → code
-    le = LabelEncoder()
-    df["region_code"] = le.fit_transform(df["region"])
-
-    # 2) 지역/연도별 평균 면적당 배출량 (노이즈 제거)
+    # 지역-연도별 평균값으로 정리
     grouped = (
-        df.groupby(["region", "region_code", "year"], as_index=False)
+        df.groupby(["region", "year"], as_index=False)
         .agg({"emissions_per_area": "mean"})
     )
 
-    # 3) 학습용 X, y
-    X = grouped[["year", "region_code"]].astype(float)
-    y = grouped["emissions_per_area"].astype(float)
-
-    model = XGBRegressor(
-        n_estimators=300,
-        learning_rate=0.05,
-        max_depth=4,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        objective="reg:squarederror",
-        tree_method="hist",
-    )
-
-    # numpy array로 확실히 넘겨서 타입 문제 방지
-    model.fit(X.values, y.values)
-
-    # 4) 예측용 (과거 + 미래 전체 연도에 대해 예측)
+    regions = grouped["region"].unique()
     min_year = int(grouped["year"].min())
     max_year = int(grouped["year"].max())
 
-    all_years = list(range(min_year, year_until + 1))
+    all_rows = []
+    hist_rows = []
 
-    regions = grouped[["region", "region_code"]].drop_duplicates()
+    for region in regions:
+        g = grouped[grouped["region"] == region].copy()
+        g = g.sort_values("year")
 
-    rows = []
-    for _, row in regions.iterrows():
-        r_name = row["region"]
-        r_code = int(row["region_code"])
-        for yr in all_years:
-            rows.append({"region": r_name, "region_code": r_code, "year": yr})
+        X = g[["year"]].values
+        y = g["emissions_per_area"].values
 
-    all_df = pd.DataFrame(rows)
+        # 선형 회귀 적합
+        model = LinearRegression()
+        model.fit(X, y)
 
-    X_all = all_df[["year", "region_code"]].astype(float)
-    all_df["pred_emissions_per_area"] = model.predict(X_all.values)
+        # 과거 부분(실제 데이터)은 그대로 저장
+        for _, r in g.iterrows():
+            hist_rows.append({
+                "region": region,
+                "year": int(r["year"]),
+                "type": "historical",
+                "value": float(r["emissions_per_area"]),
+            })
 
-    # 5) 시각화용 full 데이터 (과거 + 예측)
-    hist_for_plot = grouped.rename(columns={"emissions_per_area": "value"})
-    hist_for_plot["type"] = "historical"
+        # 전체 연도(최소 연도 ~ 2050)까지 예측
+        years = np.arange(min_year, year_until + 1)
+        y_pred = model.predict(years.reshape(-1, 1))
 
-    fut_for_plot = all_df.rename(
-        columns={"pred_emissions_per_area": "value"}
-    )
-    fut_for_plot["type"] = "forecast"
+        for yr, val in zip(years, y_pred):
+            all_rows.append({
+                "region": region,
+                "year": int(yr),
+                "value": float(val),
+            })
 
+    hist_df = pd.DataFrame(hist_rows)
+    forecast_df = pd.DataFrame(all_rows)
+    forecast_df["type"] = "forecast"
+
+    # 시각화용 full 데이터 (과거 + 선형 예측)
     full = pd.concat(
-        [hist_for_plot[["region", "year", "type", "value"]],
-         fut_for_plot[["region", "year", "type", "value"]]],
-        ignore_index=True,
+        [hist_df, forecast_df],
+        ignore_index=True
     )
 
-    return full, grouped, all_df
+    return full, grouped, forecast_df
 
 
 # ------------------------------------------------------------
 # 3. Streamlit UI
 # ------------------------------------------------------------
-st.set_page_config(page_title="XGBoost 2050 Forecast", layout="wide")
-st.title("XGBoost 기반 2050년 면적당 배출량 예측 대시보드")
+st.set_page_config(page_title="Linear Trend to 2050", layout="wide")
+st.title("선형 회귀 기반 2050년 면적당 배출량 추세 대시보드")
 
 st.write("""
 **green_en.csv** (과거 데이터)를 사용해서  
-XGBoost 회귀 모델로 2050년까지의 **emissions_per_area**(면적당 배출량)을 예측합니다.
+각 지역별 **emissions_per_area(면적당 배출량)**에 대해  
+**연도에 따른 선형 추세를 추정하고, 2050년까지 직선 경향을 연장**합니다.
 
-- 왼쪽에서 지역을 선택하면  
-  → 과거(Historical) + 2050년까지 예측(Forecast) 추세 그래프  
-  → 아래 탭에서 지역별 상세 데이터와 전체 예측 결과를 볼 수 있습니다.
+- historical: 실제 과거 연도별 평균
+- forecast: 선형 회귀로 연장한 2050년까지의 추세
 """)
 
 df_hist = load_data()
-full, grouped_hist, all_pred = train_and_forecast(df_hist, year_until=2050)
+full, grouped_hist, forecast_df = fit_linear_trend_and_forecast(df_hist, year_until=2050)
 
 regions = sorted(full["region"].unique())
 selected_region = st.sidebar.selectbox("지역 선택 (region)", regions)
@@ -135,14 +124,18 @@ tab1, tab2, tab3 = st.tabs(["추세 그래프", "지역별 데이터", "전체 �
 # 4. 추세 그래프
 # ------------------------------------------------------------
 with tab1:
-    st.subheader(f"{selected_region} — Historical vs Forecast (to 2050)")
+    st.subheader(f"{selected_region} — Historical vs Linear Trend (to 2050)")
 
-    region_data = full[full["region"] == selected_region].copy()
-    region_data = region_data.sort_values("year")
+    region_data_hist = full[(full["region"] == selected_region) & (full["type"] == "historical")].copy()
+    region_data_fore = full[(full["region"] == selected_region) & (full["type"] == "forecast")].copy()
 
-    # index = year, columns = type (historical/forecast), values = value
+    region_data_hist = region_data_hist.sort_values("year")
+    region_data_fore = region_data_fore.sort_values("year")
+
+    # 피벗 형태로 만들기
+    region_combined = pd.concat([region_data_hist, region_data_fore], ignore_index=True)
     pivot = (
-        region_data.pivot(index="year", columns="type", values="value")
+        region_combined.pivot(index="year", columns="type", values="value")
         .sort_index()
     )
 
@@ -150,7 +143,7 @@ with tab1:
 
     st.caption("""
 - **historical**: 실제 과거 데이터 (연도별 평균)
-- **forecast**: XGBoost 모델로 예측한 값
+- **forecast**: 과거 데이터를 기반으로 한 선형 회귀 직선(위/아래로 경향 보임)
 """)
 
 
@@ -161,7 +154,7 @@ with tab2:
     st.subheader(f"{selected_region} — 데이터 상세")
 
     region_hist = grouped_hist[grouped_hist["region"] == selected_region].copy()
-    region_pred = all_pred[all_pred["region"] == selected_region].copy()
+    region_fore = forecast_df[forecast_df["region"] == selected_region].copy()
 
     col1, col2 = st.columns(2)
 
@@ -173,9 +166,9 @@ with tab2:
         )
 
     with col2:
-        st.markdown("**Forecast (예측, 전체 연도)**")
+        st.markdown("**Forecast (선형 추세 예측)**")
         st.dataframe(
-            region_pred[["region", "year", "pred_emissions_per_area"]],
+            region_fore[["region", "year", "value"]],
             use_container_width=True,
         )
 
@@ -190,9 +183,9 @@ with tab3:
     csv_bytes = full_export.to_csv(index=False).encode("utf-8-sig")
 
     st.download_button(
-        label="📥 전체 예측 데이터 CSV 다운로드",
+        label="📥 전체 선형 추세 예측 데이터 CSV 다운로드",
         data=csv_bytes,
-        file_name="xgboost_forecast_full.csv",
+        file_name="linear_trend_forecast_full.csv",
         mime="text/csv",
     )
 
