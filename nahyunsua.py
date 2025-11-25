@@ -1,3 +1,10 @@
+import pandas as pd
+from pathlib import Path
+
+base_dir = Path(__file__).resolve().parent
+
+hist = pd.read_csv(base_dir / "온실가스_면적병합_전처리완료.csv")
+pred = pd.read_csv(base_dir / "XGBoost_예측결과_요약.csv")
 import streamlit as st
 import pandas as pd
 import folium
