@@ -25,7 +25,7 @@ st.title("대한민국 도시별 온실가스 배출량 예측 모델")
 
 
 # ===========================
-# 1. 데이터 불러오기 (+ 전처리: 지역명 통일, '기타' 제거, 지역×연도 평균)
+# 1. 데이터 불러오기 (+ 전처리: 지역×연도 평균)
 # ===========================
 @st.cache_data
 def load_data():
@@ -47,26 +47,9 @@ def load_data():
         df_hist.get("emissions_per_area"), errors="coerce"
     )
 
-    # 🔁 지역명 통일 (좌표 파일과 맞추기)
-    df_hist["region"] = df_hist["region"].replace({
-        "세종특별자치도": "세종특별자치시",
-        "전북특별자치도": "전라북도",
-    })
-    # '기타' 제거
-    df_hist = df_hist[df_hist["region"] != "기타"]
-
     # 쓰레기 행 제거
     df_hist = df_hist.dropna(subset=["region", "year", "emissions_per_area"])
     df_hist["year"] = df_hist["year"].astype(int)
-
-    # 좌표 타입 정리
-    df_coord["region"] = df_coord["region"].astype(str)
-    df_coord["lat"] = pd.to_numeric(df_coord["lat"], errors="coerce")
-    df_coord["lon"] = pd.to_numeric(df_coord["lon"], errors="coerce")
-
-    # 💡 좌표가 있는 지역만 사용 (지도-예측 일치 보장)
-    valid_regions = set(df_coord["region"].unique())
-    df_hist = df_hist[df_hist["region"].isin(valid_regions)]
 
     # 🔥 핵심 전처리: 지역×연도별 평균으로 1행씩만 남기기
     agg_dict = {"emissions_per_area": "mean"}
@@ -80,6 +63,11 @@ def load_data():
         .groupby(["region", "year"], as_index=False)
         .agg(agg_dict)
     )
+
+    # 좌표 타입 정리
+    df_coord["region"] = df_coord["region"].astype(str)
+    df_coord["lat"] = pd.to_numeric(df_coord["lat"], errors="coerce")
+    df_coord["lon"] = pd.to_numeric(df_coord["lon"], errors="coerce")
 
     return df_hist_clean, df_coord
 
@@ -97,6 +85,7 @@ def train_and_forecast(df_hist: pd.DataFrame, year_until: int = 2050):
     """
     regions = sorted(df_hist["region"].unique())
     min_year = int(df_hist["year"].min())
+    max_year = int(df_hist["year"].max())
     all_years = np.arange(min_year, year_until + 1)
 
     full_rows = []
@@ -106,9 +95,6 @@ def train_and_forecast(df_hist: pd.DataFrame, year_until: int = 2050):
         g = df_hist[df_hist["region"] == region].sort_values("year").copy()
         years = g["year"].values.astype(np.float32)
         y = g["emissions_per_area"].values.astype(np.float32)
-
-        if len(years) == 0:
-            continue
 
         X_hist = years.reshape(-1, 1)
 
@@ -188,24 +174,14 @@ def train_and_forecast(df_hist: pd.DataFrame, year_until: int = 2050):
 
 
 # ===========================
-# 3. 추세 설명 & 해결방안 텍스트 (안전하게 처리)
+# 3. 추세 설명 & 해결방안 텍스트
 # ===========================
 def describe_trend_and_solution(df_full: pd.DataFrame, region: str) -> str:
     df_r = df_full[df_full["region"] == region].copy()
     df_r = df_r.sort_values("year")
 
-    if df_r.empty:
-        return f"'{region}' 지역에는 예측 데이터가 부족하여 추세 분석을 제공할 수 없습니다."
-
     x = df_r["year"].values
     y = df_r["pred"].values
-
-    if len(x) < 2:
-        return (
-            f"'{region}' 지역은 데이터가 매우 적어 추세선을 계산할 수 없습니다.\n"
-            "추가 데이터 확보가 필요합니다."
-        )
-
     coef = np.polyfit(x, y, 1)
     slope = coef[0]
     start_val = y[0]
@@ -223,9 +199,6 @@ def describe_trend_and_solution(df_full: pd.DataFrame, region: str) -> str:
 
     # 전체 forecast 값 기준으로 상·하위 구간 정의
     all_forecast = df_full[df_full["kind"] == "forecast"]["pred"].dropna()
-    if len(all_forecast) == 0:
-        return trend_text + "\n" + change_text
-
     high_threshold = np.percentile(all_forecast, 75)
     low_threshold = np.percentile(all_forecast, 25)
     level = end_val
@@ -390,8 +363,16 @@ with tab1:
         )
         st.caption(
             "슬라이더를 움직이면 연도별로 색깔이 변하면서\n"
-            "면적당 배출량 변화가 **애니메이션처럼** 보입니다.\n\n"
-            "지도의 마커를 클릭하면 아래에 해당 지역 그래프와 분석이 나타납니다."
+            "면적당 배출량 변화가 **애니메이션처럼** 보입니다."
+        )
+
+        # 수동 지역 선택도 가능하게
+        all_regions = sorted(df_full["region"].unique())
+        default_region = all_regions[0] if all_regions else None
+        selected_region_manual = st.selectbox(
+            "지역 직접 선택",
+            all_regions,
+            index=0 if default_region else None,
         )
 
     with col_map:
@@ -403,22 +384,20 @@ with tab1:
             st.caption("단위: tCO₂eq/km² (면적당 온실가스 배출량)")
             map_state = st_folium(m, use_container_width=True, height=600)
 
-    # 🔥 지도 클릭으로만 지역 선택 (selectbox 제거 버전)
+    # 지도 클릭/지역 선택 처리
+    if "selected_region" not in st.session_state:
+        st.session_state["selected_region"] = selected_region_manual
+
     clicked_region = None
-    if isinstance(map_state, dict) and "last_object_clicked_popup" in map_state:
+    if "last_object_clicked_popup" in (map_state or {}):
         popup_html = map_state["last_object_clicked_popup"]
         if popup_html:
-            clicked_region = popup_html.split("<br>")[0].replace(
-                "⚠️ [Top 5 배출 밀도] ⚠️", ""
-            ).strip()
+            clicked_region = popup_html.split("<br>")[0].replace("⚠️ [Top 5 배출 밀도] ⚠️", "").strip()
 
     if clicked_region:
         st.session_state["selected_region"] = clicked_region
-
-    # 아직 아무 지역도 안 눌렀으면 안내만 띄우고 종료
-    if "selected_region" not in st.session_state:
-        st.info("지도의 마커를 클릭해서 분석할 지역을 선택해 주세요.")
-        st.stop()
+    else:
+        st.session_state["selected_region"] = selected_region_manual
 
     selected_region = st.session_state["selected_region"]
 
@@ -428,45 +407,36 @@ with tab1:
     df_r_full = df_full[df_full["region"] == selected_region].copy()
     df_r_full = df_r_full.sort_values("year")
 
-    if df_r_full.empty:
-        st.error("선택한 지역에 대한 데이터가 없습니다.")
-    else:
-        # History / Forecast 분리해서 그래프용 데이터 만들기
-        df_r_plot = pd.DataFrame({
-            "year": df_r_full["year"],
-            "History / Forecast": np.where(
-                df_r_full["kind"] == "history",
-                "History",
-                "Forecast"
-            ),
-            "value": df_r_full["pred"],
-        })
+    # History / Forecast 분리해서 그래프용 데이터 만들기
+    df_r_plot = pd.DataFrame({
+        "year": df_r_full["year"],
+        "History / Forecast": np.where(
+            df_r_full["kind"] == "history",
+            "History",
+            "Forecast"
+        ),
+        "value": df_r_full["pred"],
+    })
 
-        # 혹시 모를 중복 방지 위해 평균으로 한 번 더 묶기
-        df_r_plot = (
-            df_r_plot
-            .groupby(["year", "History / Forecast"], as_index=False)["value"]
-            .mean()
-        )
+    # 혹시 모를 중복 방지 위해 평균으로 한 번 더 묶기
+    df_r_plot = (
+        df_r_plot
+        .groupby(["year", "History / Forecast"], as_index=False)["value"]
+        .mean()
+    )
 
-        if df_r_plot.empty:
-            st.error("선택한 지역에 대해 시각화할 데이터가 없습니다.")
-        else:
-            df_pivot = df_r_plot.pivot(
-                index="year",
-                columns="History / Forecast",
-                values="value"
-            )
+    df_pivot = df_r_plot.pivot(
+        index="year",
+        columns="History / Forecast",
+        values="value"
+    )
 
-            st.line_chart(df_pivot)
-            st.caption(
-                "※ 실선은 선형추세 + XGBoost 잔차를 더한 **하이브리드 예측값**입니다. "
-                "과거 구간에서는 실제 값과 거의 일치합니다."
-            )
+    st.line_chart(df_pivot)
+    st.caption("※ 실선은 선형추세 + XGBoost 잔차를 더한 **하이브리드 예측값**입니다. 과거 구간에서는 실제 값과 거의 일치합니다.")
 
-            st.markdown("#### 추세 요약 & 정책 제안")
-            text = describe_trend_and_solution(df_full, selected_region)
-            st.markdown(text)
+    st.markdown("#### 추세 요약 & 정책 제안")
+    text = describe_trend_and_solution(df_full, selected_region)
+    st.markdown(text)
 
 
 # ---------- TAB 2: 데이터 & 다운로드 ----------
