@@ -10,9 +10,10 @@ st.title("2050년까지 지역별 면적당 온실가스 배출량 예측 및 �
 # 데이터 불러오기
 @st.cache_data
 def load_data():
-    return pd.read_csv("/mnt/data/XGBoost_예측결과_요약.csv")
-
-data = load_data()
+    base_dir = Path(__file__).resolve().parent
+    csv_path = base_dir / "XGBoost_예측결과_요약.csv"
+    st.write("CSV 경로:", csv_path)
+    return pd.read_csv(csv_path)
 # 지도 시각화
 st.subheader("2050년 면적당 온실가스 배출량 (단위: 톤/㎢)")
 map_center = [36.5, 127.8]
