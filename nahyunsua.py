@@ -9,21 +9,12 @@ from streamlit_folium import st_folium
 # 1. 데이터 불러오기
 # ---------------------------
 @st.cache_data
+@st.cache_data
 def load_data():
-    base_dir = Path(__file__).resolve().parent
-
-    # 과거 실측 데이터
-    hist_path = base_dir / "온실가스_면적병합_전처리완료.csv"
-    hist = pd.read_csv(hist_path)
-
-    # 2050 XGBoost 예측 결과
-    pred_path = base_dir / "XGBoost_예측결과_요약.csv"
-    pred = pd.read_csv(pred_path)
-
+    hist = pd.read_csv("/mnt/data/온실가스_면적병합_전처리완료.csv")
+    pred = pd.read_csv("/mnt/data/XGBoost_예측결과_요약.csv")
     return hist, pred
 
-
-hist, pred = load_data()
 
 # ---------------------------
 # 2. 기본 UI 설정
