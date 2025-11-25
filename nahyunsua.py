@@ -74,4 +74,21 @@ with tab1:
     center_lat = pred["위도"].mean()
     center_lon = pred["경도"].mean()
 
-    m = folium.Map(location=[center_lat, center_lon], z
+    m = folium.Map(location=[center_lat, center_lon], zoom_start=7)
+
+    max_val = pred["2050_면적당배출량"].max()
+
+    for _, row in pred.iterrows():
+        value = row["2050_면적당배출량"]
+        radius = 5 + 15 * (value / max_val)
+
+        folium.CircleMarker(
+            location=[row["위도"], row["경도"]],
+            radius=radius,
+            popup=f"{row['지역']} : {value:.2f}",
+            color="red",
+            fill=True,
+            fill_opacity=0.7,
+        ).add_to(m)
+
+    st_folium(m, width=900, height=550)
