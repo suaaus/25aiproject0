@@ -30,26 +30,12 @@ st.title("대한민국 도시별 온실가스 배출량 예측 모델")
 # ===========================
 @st.cache_data
 def load_data():
-    base_dir = Path(__file__).resolve().parent
-    hist_path = base_dir / "green_en.csv"          # 과거 데이터
-    coord_path = base_dir / "XGBoostData_en.csv"   # 지역별 위도/경도
+    df_hist = df_hist.groupby(["region", "year"], as_index=False).agg({
+    "emissions_per_area": "mean",
+    "emissions": "mean",
+    "area": "mean"
+})
 
-    df_hist = pd.read_csv(hist_path)
-    df_coord = pd.read_csv(coord_path)
-
-    # 타입 정리
-    df_hist["year"] = df_hist["year"].astype(int)
-    df_hist["region"] = df_hist["region"].astype(str)
-    df_hist["emissions_per_area"] = pd.to_numeric(
-        df_hist["emissions_per_area"], errors="coerce"
-    )
-
-    df_coord["region"] = df_coord["region"].astype(str)
-
-    # 결측 제거
-    df_hist = df_hist.dropna(subset=["emissions_per_area"])
-
-    return df_hist, df_coord
 
 
 # ===========================
