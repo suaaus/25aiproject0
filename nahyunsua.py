@@ -208,15 +208,15 @@ def create_map(df_full, df_coord, selected_year):
         radius = base_radius + extra_radius * norm
 
         CircleMarker(
-            location=[row["lat"], row["lon"]],
-            radius=radius,
-            color=cmap(row["value"]),
-            fill=True,
-            fill_color=cmap(row["value"]),
-            fill_opacity=0.9,
-            weight=1.5,
-            tooltip=f"{row['value']:.2f} tCO₂eq/km²"
-        ).add_to(m)
+    location=[row["lat"], row["lon"]],
+    radius=radius,
+    color=cmap(row["value"]),
+    fill=True,
+    fill_color=cmap(row["value"]),
+    fill_opacity=0.9,
+    weight=1.5,
+    tooltip=f"{row['region']} : {row['value']:.2f} tCO₂eq/km²"
+).add_to(m)
 
     cmap.caption = f"{selected_year}년 면적당 온실가스 배출량"
     cmap.add_to(m)
