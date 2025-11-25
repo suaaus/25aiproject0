@@ -8,12 +8,31 @@ from streamlit_folium import st_folium
 # ---------------------------
 # 1. 데이터 불러오기
 # ---------------------------
-@st.cache_data
+
+
 @st.cache_data
 def load_data():
-    hist = pd.read_csv("/mnt/data/온실가스_면적병합_전처리완료.csv")
-    pred = pd.read_csv("/mnt/data/XGBoost_예측결과_요약.csv")
+    base_dir = Path(__file__).resolve().parent
+
+    hist_path = base_dir / "온실가스_면적병합_전처리완료.csv"
+    pred_path = base_dir / "XGBoost_예측결과_요약.csv"
+
+    # 인코딩 + BOM 제거 대비
+    hist = pd.read_csv(hist_path, encoding="utf-8-sig")
+    pred = pd.read_csv(pred_path, encoding="utf-8-sig")
+
+    # 🔑 컬럼 이름 공백 + BOM 제거
+    for df in (hist, pred):
+        df.columns = (
+            df.columns.astype(str)              # 혹시 모를 타입 통일
+                     .str.replace("\ufeff", "") # BOM 제거
+                     .str.strip()               # 앞뒤 공백 제거
+        )
+
     return hist, pred
+
+hist, pred = load_data()
+
 
 
 # ---------------------------
