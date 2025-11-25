@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import folium
 from streamlit_folium import st_folium
+import os
 
 st.set_page_config(layout="wide")
 st.title("2050년까지 지역별 면적당 온실가스 배출량 예측 및 대응 대시보드")
@@ -65,5 +66,19 @@ for region, details in explanations.items():
     with st.expander(f"{region}"):
         st.markdown(f"**배출 증가 요인:** {details['이유']}")
         st.markdown(f"**권장 대응 방안:** {details['대응']}")
+
+st.divider()
+
+# 지역별 예측 그래프 이미지 보기
+st.subheader("지역별 배출량 예측 그래프")
+
+graph_dir = "xgb_predictions"
+if os.path.exists(graph_dir):
+    image_files = [f for f in os.listdir(graph_dir) if f.endswith(".png")]
+    image_files.sort()
+    for img_file in image_files:
+        st.image(os.path.join(graph_dir, img_file), caption=img_file.replace("_예측.png", ""), use_column_width=True)
+else:
+    st.warning("예측 그래프 이미지 폴더(xgb_predictions)를 찾을 수 없습니다. 파일을 해당 경로에 넣어주세요.")
 
 st.info("배출량 분석과 대응 전략은 F2025-50 국가장기전략 보고서 (2050 탄소중립 시나리오) 기반으로 구성되었습니다.")
