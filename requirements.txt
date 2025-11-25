@@ -7,3 +7,8 @@ scikit-learn
 xgboost
 matplotlib
 plotly
+streamlit
+pandas
+xgboost
+scikit-learn
+matplotlib
