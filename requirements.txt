@@ -12,3 +12,11 @@ pandas
 xgboost
 scikit-learn
 matplotlib
+streamlit
+pandas
+numpy
+xgboost
+scikit-learn
+folium
+streamlit-folium
+branca
